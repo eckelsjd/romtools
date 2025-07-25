@@ -1,0 +1,10 @@
+# Hide typical result files
+*.log
+.ipynb_checkpoints
+*.pkl
+*.h5
+*.hdf5
+*.pdf
+*.png
+*.jpg
+*.svg

@@ -1,0 +1,80 @@
+[project]
+name = "romtools"
+version = "0.0.0"
+description = "Tools for reduced-order modeling"
+authors = [
+    {name = "Joshua Eckels", email = "eckelsjd@umich.edu"},
+]
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.14",
+    "matplotlib>=3.9"
+]
+requires-python = ">=3.11"
+readme = "README.md"
+license = {text = "MIT"}
+keywords = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research"
+]
+
+[project.urls]
+Repository = "https://github.com/eckelsjd/romtools.git"
+
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm]
+distribution = true
+
+
+[tool.pdm.install]
+cache = true
+
+[tool.ruff.lint]
+select = ['E', 'F', 'I']
+ignore = ['E731']  # allow lambda definitions
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["*.ipynb"]
+
+[tool.commitizen]
+version_scheme = "pep440"
+version_provider = "pep621"
+version_files = ["src/romtools/__init__.py:__version__"]
+update_changelog_on_bump = true
+tag_format = "v$version"
+changelog_file = "CHANGELOG.md"
+major_version_zero = true
+annotated_tag = true
+post_bump_hooks = ["git push --follow-tags"]
+
+[tool.pdm.scripts]
+setup_dev = {composite = ["pdm sync -G dev",
+    "pre-commit install --allow-missing-config",
+    ]}
+bump = "cz bump {args}"
+test = "pytest --cov=romtools --cov-report html:htmlcov tests"
+
+lint = "ruff check src tests {args}"
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "copier>=9.3",
+    "copier-templates-extensions>=0.3.0",
+    "ruff>=0.6",
+    "pre-commit>=3.8",
+    "commitizen>=3.29",
+    
+]
+test = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+
+
