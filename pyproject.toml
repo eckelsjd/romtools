@@ -1,6 +1,6 @@
 [project]
 name = "romtools"
-version = "0.0.0"
+version = "0.0.1"
 description = "Tools for reduced-order modeling"
 authors = [
     {name = "Joshua Eckels", email = "eckelsjd@umich.edu"},
@@ -8,7 +8,8 @@ authors = [
 dependencies = [
     "numpy>=2.0",
     "scipy>=1.14",
-    "matplotlib>=3.9"
+    "matplotlib>=3.9",
+    "h5py>=3.14"
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -23,14 +24,12 @@ classifiers = [
 [project.urls]
 Repository = "https://github.com/eckelsjd/romtools.git"
 
-
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [tool.pdm]
 distribution = true
-
 
 [tool.pdm.install]
 cache = true
@@ -55,26 +54,20 @@ annotated_tag = true
 post_bump_hooks = ["git push --follow-tags"]
 
 [tool.pdm.scripts]
-setup_dev = {composite = ["pdm sync -G dev",
-    "pre-commit install --allow-missing-config",
-    ]}
+setup_dev = {composite = ["pdm sync -G dev", "pre-commit install --allow-missing-config"]}
 bump = "cz bump {args}"
 test = "pytest --cov=romtools --cov-report html:htmlcov tests"
-
 lint = "ruff check src tests {args}"
 
-[tool.pdm.dev-dependencies]
+[dependency-groups]
 dev = [
     "copier>=9.3",
     "copier-templates-extensions>=0.3.0",
     "ruff>=0.6",
     "pre-commit>=3.8",
     "commitizen>=3.29",
-    
 ]
 test = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
 ]
-
-

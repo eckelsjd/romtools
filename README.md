@@ -10,33 +10,30 @@
 
 [//]: # (You will need to register your Github repo with trusted publishing on PyPI if desired: https://docs.pypi.org/trusted-publishers/)
 
-Tools for reduced-order modeling
+Tools for reduced-order modeling.
+
+Currently just really basic data loading/processing and plotting with support for:
+
+- 2d finite-volume quadrilateral mesh
+- Tecplot ASCII data files
+- 1d and 2d plots with slicing and animation
+- Surface integrals on boundary
+
+Some ideas for the future:
+
+- More general abstract data loading/parsing/saving, can support Tecplot but also other common formats like vtk, pmd, yt, etc.
+- Support for 1d and 3d mesh data
+- Support for numerical results other than finite-volume (or even other than PDEs)
+- Volume and line integrals
+- Actual ROM implementations (lol)
 
  ## ⚙️ Installation
 ```shell
-pip install romtools
-```
-If you are using [pdm](https://github.com/pdm-project/pdm) in your own project, then you can use:
-```shell
-pdm add romtools
-
-# Or in editable mode from a local clone...
-pdm add -e ./romtools --dev
-```
-
-## 📍 Quickstart
-```python
-import romtools
-
-romtools.demonstrate_basic_usage()
-
-print('Wow!')
+git clone https://github.com/eckelsjd/romtools.git
+pip install -e romtools
 ```
 
  ## 🏗️ Contributing
 See the [contribution](https://github.com/eckelsjd/romtools/blob/main/CONTRIBUTING.md) guidelines.
-
-## Citations
-Include any additional references for your project.
 
 <sup><sub>Made with the [copier-numpy](https://github.com/eckelsjd/copier-numpy.git) template.</sub></sup>
