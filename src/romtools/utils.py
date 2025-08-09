@@ -6,7 +6,7 @@ import numpy as np
 from scipy.interpolate import griddata
 from numpy.typing import ArrayLike
 
-__all__ = ['get_boundary', 'edge_normal', 'slice1d', 'integrate_boundary']
+__all__ = ['get_boundary', 'edge_normal', 'slice1d', 'integrate_boundary', 'normalize', 'denormalize', 'relative_error']
 
 
 def get_boundary(polys: ArrayLike):
@@ -174,3 +174,118 @@ def integrate_boundary(data: list[dict],
         values = np.squeeze(values, axis=-1)
     
     return np.array(values)  # (Nframes, shape of integrand)
+
+
+def normalize(data: ArrayLike, method: str = None):
+    """Normalize data using a provided method.
+    
+    :param data: any array data to normalize
+    :param method: choose a provided normalization method
+    :return norm_data: the normalized data
+    :return const: the normalization constants (if any)
+    """
+    c1, c2 = None, None
+    match method:
+        case 'log':
+            return np.log1p(data), (c1, c2)
+        case 'zscore':
+            c1, c2 = np.mean(data), np.std(data)
+            return (data - c1) / c2, (c1, c2)
+        case 'minmax':
+            c1, c2 = np.min(data), np.max(data)
+            return (data - c1) / (c2 - c1), (c1, c2)
+        case 'sqrt':
+            return np.sqrt(data), (c1, c2)
+        case 'log10':
+            return np.log10(data + 1), (c1, c2)
+        case 'log-log':
+            return np.log1p(np.log1p(data)), (c1, c2)
+        case 'log-z':
+            log_data = np.log1p(data)
+            c1, c2 = np.mean(log_data), np.std(log_data)
+            return (log_data - c1) / c2, (c1, c2)
+        case 'sqrt-log':
+            return np.log1p(np.sqrt(data)), (c1, c2)
+        case 'log-minmax':
+            log_data = np.log1p(data)
+            c1, c2 = np.min(log_data), np.max(log_data)
+            return (log_data - c1) / (c2 - c1), (c1, c2)
+        case 'symlog':
+            linthresh = 1
+            linscale = 1
+            base = 10
+            abs_data = np.abs(data)
+            res = np.empty_like(data)
+            log_region = abs_data > linthresh
+            res[~log_region] = linscale * data[~log_region]
+            res[log_region] = np.sign(data)[log_region] * (linthresh*linscale + np.log(abs_data[log_region] / linthresh) / np.log(base))
+            return res, None
+        case 'none' | None:
+            return data, None
+
+
+def denormalize(data: ArrayLike, method: str = None, consts: tuple[float, float] = None):
+    """Denormalize data using the inverse of the specified method.
+    
+    :param data: the normalized data
+    :param method: the original normalization method (will do the inverse here)
+    :param consts: the norm constants returned by normalize for the associated method
+    :return denorm_data: the denormalized data
+    """
+    match method:
+        case 'log':
+            return np.expm1(data)
+        case 'zscore':
+            c1, c2 = consts
+            return data * c2 + c1
+        case 'minmax':
+            c1, c2 = consts
+            return data * (c2 - c1) + c1
+        case 'sqrt':
+            return data ** 2
+        case 'log10':
+            return 10 ** data - 1
+        case 'log-log':
+            return np.expm1(np.expm1(data))
+        case 'log-z':
+            c1, c2 = consts
+            return np.expm1(data * c2 + c1)
+        case 'sqrt-log':
+            return np.expm1(data) ** 2
+        case 'log-minmax':
+            c1, c2 = consts
+            return np.expm1(data * (c2 - c1) + c1)
+        case 'symlog':
+            linthresh = 1
+            linscale = 1
+            base = 10
+            res = np.empty_like(data)
+            abs_data = np.abs(data)
+            linear_region = abs_data <= linthresh * linscale
+            res[linear_region] = data[linear_region] / linscale
+            res[~linear_region] = np.sign(data)[~linear_region] * (linthresh * np.exp(np.log(base) * (abs_data[~linear_region] - linthresh*linscale)))
+            return res
+        case 'none' | None:
+            return data
+
+
+def relative_error(pred, targ, axis=None, skip_nan=False, pointwise=False, tol=1e-6):
+    """Compute the relative L2 error between two vectors along the given axis.
+
+    :param pred: the predicted values
+    :param targ: the target values
+    :param axis: the axis along which to compute the error
+    :param skip_nan: whether to skip NaN values in the error calculation
+    :param pointwise: if true, then don't sum and just return pointwise relative error
+    :param tol: the tolerance in targ below which errors are set to nan (since rel error is unstable near 0)
+    :returns: the relative L2 error
+    """
+    with np.errstate(divide='ignore', invalid='ignore'):
+        if pointwise:
+            sum_func = lambda x, **kwargs: x
+        else:
+            sum_func = np.nansum if skip_nan else np.sum
+        denom = np.sqrt(sum_func(targ**2, axis=axis))
+        err = np.sqrt(sum_func((pred - targ)**2, axis=axis)) / denom
+        err[denom < tol] = np.nan
+    return np.nan_to_num(err, nan=np.nan, posinf=np.nan, neginf=np.nan)

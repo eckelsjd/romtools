@@ -515,7 +515,10 @@ def load_h5(filename: str | Path, t_start: float = 0.0, groups: list[str] = None
         return result
 
     with h5py.File(filename, 'r', track_order=True) as f:
-        result = {a: f.attrs.get(a, ATTRS[a]) for a in ATTRS}
+        result = {}
+        for a in f.attrs:
+            result[a] = f.attrs.get(a)
+            
         for key in f:
             if groups is not None and key not in groups:
                 continue
