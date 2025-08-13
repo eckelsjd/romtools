@@ -105,7 +105,7 @@ def _replace_chars(s: str, inverse: bool = False):
     return new_s
 
 
-def load_tecplot(filename: str | Path, t_start: float = 0.0):
+def load_tecplot(filename: str | Path, t_start: float = 0.0, t_end: float = -1.0):
     """Extract Tecplot data into the Dictionary format.
 
     Assumptions on file format:
@@ -123,6 +123,7 @@ def load_tecplot(filename: str | Path, t_start: float = 0.0):
     
     :param filename: the .dat tecplot file to load from
     :param t_start: the simulation time to start loading data from (default 0.0)
+    :param t_end: the simulation time after which to stop loading data from (default -1.0 which goes to the end)
     :returns: {data         - list of node/cell data at each time step
                time         - list of simulation times (s)
                connectivity - list of nodes for each cell
@@ -131,6 +132,9 @@ def load_tecplot(filename: str | Path, t_start: float = 0.0):
     """
     with open(filename, 'r') as f:
         lines = f.readlines()
+    
+    if t_end < 0:
+        t_end = np.inf
 
     attrs = copy.deepcopy(ATTRS)
 
@@ -196,6 +200,9 @@ def load_tecplot(filename: str | Path, t_start: float = 0.0):
                 i += 1
                 parsed_connectivity = True  # If we skip first ZONE, there will be no connectivity
                 continue
+            
+            if sim_time > t_end:
+                break
 
             sim_times.append(sim_time)
 
