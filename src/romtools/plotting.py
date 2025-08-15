@@ -4,7 +4,7 @@ Includes:
   - gridplot - Plot simulation data (1d or 2d) in a grid (with animation utilities)
   - compare  - Helper to compare two sets of simulation data in a 3-column (truth, rom, error) plot
 """
-from typing import Literal, NotRequired, TypedDict, Optional
+from typing import Literal, NotRequired, TypedDict, Optional, Callable
 from pathlib import Path
 from abc import ABC
 from dataclasses import dataclass, field, asdict
@@ -14,7 +14,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from numpy.typing import ArrayLike
-from matplotlib.collections import PolyCollection
+from matplotlib.collections import PolyCollection, TriMesh
+from matplotlib.tri import Triangulation
 from matplotlib.animation import FuncAnimation
 
 from romtools.utils import get_boundary, edge_normal, relative_error
@@ -29,8 +30,8 @@ ANIMATE_DEFAULT = {
 }
 
 GRID_OPTS = {
-    "color": (0.3, 0.3, 0.3, 0.3),
-    "lw": 0.6
+    "color": (0.5, 0.5, 0.5, 0.2),
+    "lw": 0.5
 }
 
 
@@ -96,6 +97,7 @@ class CellMetadata(PlotMetadata):
     :ivar connectivity: (N, 4) array specifying vertex indices for each cell
     
     Optional options are:
+    :ivar shading: If flat (default), just color cells with avg value. If gouraud, use tripcolor to shade
     :ivar show_mesh: Show grid lines of mesh (must have node data and connectivity)
     :ivar cell_center_opts: If provided, options for plotting cell centers. Not plotted if None
     :ivar boundary_cell_color: If provided, the color to highlight boundary cells. Not highlighted if None
@@ -105,6 +107,7 @@ class CellMetadata(PlotMetadata):
     cells: ArrayLike
     vertices: ArrayLike
     connectivity: ArrayLike
+    shading: Literal['flat', 'gouraud'] = 'flat'
     show_mesh: bool = False
     cell_center_opts: Optional[dict] = None
     boundary_cell_color: Optional[str] = None
@@ -170,8 +173,10 @@ def compare(first: list[list[Frame]],
             col_labels: list[str] = None,
             tag_data_labels: bool = False,
             text_offset: float = 0.05,
-            rel_error_tol: float = 1e-6,
+            error_func: Literal['absolute', 'relative'] | Callable[[ArrayLike, ArrayLike], ArrayLike] = 'relative',
+            error_func_opts: dict = None,
             error_plot_opts: dict = None,
+            error_grid_opts: dict = GRID_OPTS,
             combine_opts: tuple[dict, dict] = (),
             **gridplot_opts
             ):
@@ -193,16 +198,16 @@ def compare(first: list[list[Frame]],
     :param col_labels: Labels for first two columns (optionally third label for error column). Columns not labeled if None.
     :param tag_data_labels: If true, will add col_labels to data labels when merging (by default, will overwrite existing data label)
     :param text_offset: for row labels on the left - the amount (in figure coords) to push row labels to the left
-    :param rel_error_tol: the absolute value below which pointwise relative error is ignored (rel error is unstable near 0)
+    :param error_func: Callable as error_func(second_col, first_col, **opts), computes error between columns (default is relative error)
+    :param error_func_opts: Options to pass to the error func
     :param error_plot_opts: different options to use for error column (defaults to using same as variables)
+    :param error_grid_opts: If provided, options for showing a grid in the error column (shows small gray grid by default), set to None to turn off
     :param combine_opts: If provided, the first and second columns will be combined, with the provided options overriding
                          any existing plot options for variables in each column. This is only recommended for 1d data.
     :param gridplot_opts: Rest of the options are passed to gridplot
     """
     if variable is None:
         variable = next(iter(first[0][0]))
-    if col_labels is not None and show_error and len(col_labels) < 3:
-        col_labels.append('Relative error')
     
     num_frames = len(first[0])  # same for all
     
@@ -211,6 +216,27 @@ def compare(first: list[list[Frame]],
     pre_adjust = opts.get("adjust", None)
     data_plot_opts = {}
     data_labels = {}
+
+    if error_func_opts is None:
+        error_func_opts = {}
+
+    if isinstance(error_func, str):
+        match error_func:
+            case 'relative': 
+                error_func = relative_error
+                error_func_opts.update({"pointwise": True})
+                error_tag = 'relative error'
+            case 'absolute':
+                error_func = lambda pred, targ, **kwargs: np.abs(pred - targ)
+                error_tag = 'absolute error'
+                error_title = 'Absolute error'
+            case _:
+                raise NotImplementedError(f"Error function '{error_func}' not recognized.")
+    else:
+        error_tag = 'error'
+    
+    if col_labels is not None and show_error and len(col_labels) < 3:
+        col_labels.append(error_tag.capitalize())
 
     # Figure out how to iterate variables (depending on which plots are sharing)
     if isinstance(data_opts, PlotMetadata):
@@ -273,7 +299,6 @@ def compare(first: list[list[Frame]],
     vmax = []
 
     new_share_plot = {}
-    error_tag = 'relative error'
     share_plot_tags = col_labels if col_labels is not None else ['', ' ', '  ']  # need distinct group names for new share plot
     if share_plot:
         for group in share_plot:
@@ -319,11 +344,14 @@ def compare(first: list[list[Frame]],
 
             # Update error plot opts
             if j >= 2:
-                data_plot_opts[var_key]['norm'] = 'log'  # always log for relative error
                 if error_plot_opts is not None:
-                    data_plot_opts[var_key] = error_plot_opts
+                    if var_key in data_plot_opts:
+                        data_plot_opts[var_key].update(error_plot_opts)
+                    else:
+                        data_plot_opts[var_key] = error_plot_opts
                 if share_curr_var:
-                    data_labels[var_key] += f' {error_tag}'
+                    data_labels[var_key] = error_tag.capitalize()
+                    # data_labels[var_key] += f' {error_tag}'
             
             # Share data for 1d plots
             if share_plot:
@@ -346,7 +374,7 @@ def compare(first: list[list[Frame]],
                 row_data = [frame1[i][curr_var], frame2[i][curr_var]]
                 
                 if show_error and j >= 2:
-                    row_data.append(relative_error(row_data[1], row_data[0], pointwise=True, tol=rel_error_tol))
+                    row_data.append(error_func(row_data[1], row_data[0], **error_func_opts))
                     
                 combined_frames[i][var_key] = row_data[j]
     
@@ -365,11 +393,11 @@ def compare(first: list[list[Frame]],
                     elif len(axs[i, j].lines) > 0:      # 1d data
                         axs[i, j].set_ylim([vmin[i], vmax[i]])
                 else:
-                    if show_error:
-                        axs[i, j].grid(**GRID_OPTS)
+                    if show_error and error_grid_opts:
+                        axs[i, j].grid(**error_grid_opts)
                 
                 if i == 0 and col_labels is not None and len(combine_opts) == 0:
-                    axs[i, j].set_title(col_labels[j] if j < len(col_labels) else 'Relative error', color=text_color, **text_opts)
+                    axs[i, j].set_title(col_labels[j] if j < len(col_labels) else error_tag.capitalize(), color=text_color, **text_opts)
                 
                 if j == 0 and row_labels is not None:
                     pos = axs[i, 0].get_position()
@@ -534,8 +562,20 @@ def gridplot(data: list[Frame],
                         edgecolors.append((0.5, 0.5, 0.5, 0.3))
             else:
                 edgecolors='face'
+            
+            if data_opts.shading == 'gouraud':
+                # Use tripcolor for shading
+                triangles = []
+                for quad in data_opts.connectivity:
+                    v0, v1, v2, v3 = quad
+                    triangles.append([v0, v1, v2])
+                    triangles.append([v0, v2, v3])
+                triangles = np.array(triangles)
+                triang = Triangulation(data_opts.vertices[:, 0], data_opts.vertices[:, 1], triangles)
+            else:
+                triang = None
         
-            return (quads, boundary_edges, boundary_cells, edge_groups, boundary_colors, edgecolors)
+            return (quads, boundary_edges, boundary_cells, edge_groups, boundary_colors, edgecolors, triang)
         
         else:
             return ()
@@ -548,10 +588,15 @@ def gridplot(data: list[Frame],
                 yield v, plot_idx
 
     pre_plot_info = _pre_plot()  # in case more things are needed for plotting
+    skip_first_clims = False
 
     for v, plot_idx in _iter_all_vars():
         ax = axs.flatten()[plot_idx]
         arr = data[0].get(v)
+
+        if np.all(np.isnan(arr)):
+            skip_first_clims = True
+            arr = np.full_like(arr, 1e-6)  # small workaround to avoid cbar issues
 
         axes_visible = coord_labels is not None
         ax.tick_params(axis='both', which='both', top=False, bottom=axes_visible, left=axes_visible, right=False, direction='in',
@@ -612,10 +657,25 @@ def gridplot(data: list[Frame],
             ax.autoscale(enable=False)
             ax.set_xlim([coords_min[0], coords_max[0]])
             ax.set_ylim([coords_min[1], coords_max[1]])
-            quads, boundary_edges, boundary_cells, edge_groups, boundary_colors, edgecolors = pre_plot_info
-            pc = PolyCollection(quads, array=arr, edgecolors=edgecolors, **plot_opts.get(v, {}))
-            ax.add_collection(pc)
-            collections[v] = pc
+            quads, boundary_edges, boundary_cells, edge_groups, boundary_colors, edgecolors, triang = pre_plot_info
+
+            if triang is None:
+                # Use poly collection for 'flat' shading (default)
+                pc = PolyCollection(quads, array=arr, edgecolors=edgecolors, **plot_opts.get(v, {}))
+                ax.add_collection(pc)
+                collections[v] = pc
+            else:
+                # Use triangles for shading otherwise
+                vertex_arr = np.zeros(data_opts.vertices.shape[0])
+                counts = np.zeros_like(vertex_arr)
+                for center_val, verts in zip(arr, data_opts.connectivity):
+                    for vidx in verts:
+                        vertex_arr[vidx] += center_val
+                        counts[vidx] += 1
+                vertex_arr /= counts
+
+                tpc = ax.tripcolor(triang, vertex_arr, shading='gouraud', edgecolors=edgecolors, **plot_opts.get(v, {}))
+                collections[v] = tpc
 
             # Outline the boundary
             for i, edge in enumerate(boundary_edges):
@@ -641,7 +701,7 @@ def gridplot(data: list[Frame],
             if data_opts.cell_center_opts is not None:
                 ax.scatter(data_opts.cells[:, 0], data_opts.cells[:, 1], **data_opts.cell_center_opts)
             
-            cb = plt.colorbar(pc, ax=ax)
+            cb = plt.colorbar(collections[v], ax=ax)
             cb.ax.set_ylabel(labels.get(v, v), color=text_color, **text_opts)
             cb.ax.tick_params(labelcolor=text_color, color=text_color)
             cb.outline.set_edgecolor(text_color)
@@ -663,6 +723,9 @@ def gridplot(data: list[Frame],
 
             ymin, ymax = [curr_min], [curr_max]
             for i in range(len(data)):
+                if i == 0 and skip_first_clims:  # Only from an all-nan workaround
+                    continue
+
                 arr = data[i][v]
                 ymin.append(np.nanmin(arr))
                 ymax.append(np.nanmax(arr))
@@ -688,7 +751,21 @@ def gridplot(data: list[Frame],
                     if ret is None:
                         ret = list(ydata.values())
                 elif v in collections:
-                    collections[v].set_array(data[idx_use][v])
+                    cell_arr = data[idx_use][v]
+
+                    # Need to average cell data to vertices for tri mesh
+                    if isinstance(collections[v], TriMesh):
+                        vertex_arr = np.zeros(data_opts.vertices.shape[0])
+                        counts = np.zeros_like(vertex_arr)
+                        for center_val, verts in zip(cell_arr, data_opts.connectivity):
+                            for vidx in verts:
+                                vertex_arr[vidx] += center_val
+                                counts[vidx] += 1
+                        vertex_arr /= counts
+                        collections[v].set_array(vertex_arr)
+                    else:
+                        collections[v].set_array(cell_arr)
+
                     if ret is None:
                         ret = list(collections.values())
                 

@@ -222,6 +222,8 @@ def normalize(data: ArrayLike, method: str = None):
             return res, None
         case 'none' | None:
             return data, None
+        case _:
+            raise NotImplementedError(f"Normalization method '{method}' not recognized")
 
 
 def denormalize(data: ArrayLike, method: str = None, consts: tuple[float, float] = None):
@@ -263,10 +265,12 @@ def denormalize(data: ArrayLike, method: str = None, consts: tuple[float, float]
             abs_data = np.abs(data)
             linear_region = abs_data <= linthresh * linscale
             res[linear_region] = data[linear_region] / linscale
-            res[~linear_region] = np.sign(data)[~linear_region] * (linthresh * np.exp(np.log(base) * (abs_data[~linear_region] - linthresh*linscale)))
+            res[~linear_region] = np.sign(data)[~linear_region] * (linthresh * np.power(base, abs_data[~linear_region] - linthresh*linscale))
             return res
         case 'none' | None:
             return data
+        case _:
+            raise NotImplementedError(f"Normalization method '{method}' not recognized")
 
 
 def relative_error(pred, targ, axis=None, skip_nan=False, pointwise=False, tol=1e-6):
