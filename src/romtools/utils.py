@@ -176,23 +176,30 @@ def integrate_boundary(data: list[dict],
     return np.array(values)  # (Nframes, shape of integrand)
 
 
-def normalize(data: ArrayLike, method: str = None):
+def normalize(data: ArrayLike, method: str = None, consts: tuple[float, float] = None):
     """Normalize data using a provided method.
     
     :param data: any array data to normalize
     :param method: choose a provided normalization method
+    :param consts: if provided, use these to normalize the data rather than compute new norm consts
     :return norm_data: the normalized data
     :return const: the normalization constants (if any)
     """
-    c1, c2 = None, None
+    if consts is None:
+        c1, c2 = None, None
+    else:
+        c1, c2 = consts
+
     match method:
         case 'log':
             return np.log1p(data), (c1, c2)
         case 'zscore':
-            c1, c2 = np.mean(data), np.std(data)
+            if consts is None:
+                c1, c2 = np.mean(data), np.std(data)
             return (data - c1) / c2, (c1, c2)
         case 'minmax':
-            c1, c2 = np.min(data), np.max(data)
+            if consts is None:
+                c1, c2 = np.min(data), np.max(data)
             return (data - c1) / (c2 - c1), (c1, c2)
         case 'sqrt':
             return np.sqrt(data), (c1, c2)
@@ -202,13 +209,15 @@ def normalize(data: ArrayLike, method: str = None):
             return np.log1p(np.log1p(data)), (c1, c2)
         case 'log-z':
             log_data = np.log1p(data)
-            c1, c2 = np.mean(log_data), np.std(log_data)
+            if consts is None:
+                c1, c2 = np.mean(log_data), np.std(log_data)
             return (log_data - c1) / c2, (c1, c2)
         case 'sqrt-log':
             return np.log1p(np.sqrt(data)), (c1, c2)
         case 'log-minmax':
             log_data = np.log1p(data)
-            c1, c2 = np.min(log_data), np.max(log_data)
+            if consts is None:
+                c1, c2 = np.min(log_data), np.max(log_data)
             return (log_data - c1) / (c2 - c1), (c1, c2)
         case 'symlog':
             linthresh = 1
@@ -220,6 +229,18 @@ def normalize(data: ArrayLike, method: str = None):
             res[~log_region] = linscale * data[~log_region]
             res[log_region] = np.sign(data)[log_region] * (linthresh*linscale + np.log(abs_data[log_region] / linthresh) / np.log(base))
             return res, None
+        case 'symlog-minmax':
+            linthresh = 1
+            linscale = 1
+            base = 10
+            abs_data = np.abs(data)
+            res = np.empty_like(data)
+            log_region = abs_data > linthresh
+            res[~log_region] = linscale * data[~log_region]
+            res[log_region] = np.sign(data)[log_region] * (linthresh*linscale + np.log(abs_data[log_region] / linthresh) / np.log(base))
+            if consts is None:
+                c1, c2 = np.min(res), np.max(res)
+            return (res - c1) / (c2 - c1), (c1, c2)
         case 'none' | None:
             return data, None
         case _:
@@ -267,6 +288,18 @@ def denormalize(data: ArrayLike, method: str = None, consts: tuple[float, float]
             res[linear_region] = data[linear_region] / linscale
             res[~linear_region] = np.sign(data)[~linear_region] * (linthresh * np.power(base, abs_data[~linear_region] - linthresh*linscale))
             return res
+        case 'symlog-minmax':
+            c1, c2 = consts
+            linthresh = 1
+            linscale = 1
+            base = 10
+            res = np.empty_like(data)
+            data = data * (c2 - c1) + c1
+            abs_data = np.abs(data)
+            linear_region = abs_data <= linthresh * linscale
+            res[linear_region] = data[linear_region] / linscale
+            res[~linear_region] = np.sign(data)[~linear_region] * (linthresh * np.power(base, abs_data[~linear_region] - linthresh*linscale))
+            return res
         case 'none' | None:
             return data
         case _:
@@ -291,5 +324,7 @@ def relative_error(pred, targ, axis=None, skip_nan=False, pointwise=False, tol=1
             sum_func = np.nansum if skip_nan else np.sum
         denom = np.sqrt(sum_func(targ**2, axis=axis))
         err = np.sqrt(sum_func((pred - targ)**2, axis=axis)) / denom
-        err[denom < tol] = np.nan
+
+        if pointwise:
+            err[denom < tol] = np.nan
     return np.nan_to_num(err, nan=np.nan, posinf=np.nan, neginf=np.nan)

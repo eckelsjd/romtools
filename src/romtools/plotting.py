@@ -648,6 +648,8 @@ def gridplot(data: list[Frame],
             cb = plt.colorbar(pcm, ax=ax)
             cb.ax.set_ylabel(labels.get(v, v), color=text_color, **text_opts)
             cb.ax.tick_params(labelcolor=text_color, color=text_color)
+            cb.ax.tick_params(which='minor', color=(0,0,0,0), width=0, size=0)
+            cb.ax.minorticks_off()
             cb.outline.set_edgecolor(text_color)
         
         # Polycollection quadrilateral 2d plot
@@ -704,6 +706,8 @@ def gridplot(data: list[Frame],
             cb = plt.colorbar(collections[v], ax=ax)
             cb.ax.set_ylabel(labels.get(v, v), color=text_color, **text_opts)
             cb.ax.tick_params(labelcolor=text_color, color=text_color)
+            cb.ax.tick_params(which='minor', color=(0,0,0,0), width=0, size=0)
+            cb.ax.minorticks_off()
             cb.outline.set_edgecolor(text_color)
 
     if adjust is not None:
